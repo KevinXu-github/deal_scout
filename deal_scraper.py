@@ -26,7 +26,22 @@ def scrape_footlocker(pages=1):
             
             for product in product_cards:
                 try:
-                    title = product.select_one(".ProductCard-link").text.strip()
+                    # Extract just the product name instead of all text
+                    product_link = product.select_one(".ProductCard-link")
+                    product_name_elem = product_link.select_one(".ProductName-primary")
+                    
+                    # If there's a specific product name element, use it
+                    if product_name_elem:
+                        title = product_name_elem.text.strip()
+                    else:
+                        # Fallback: try to extract just the product name from the link text
+                        title = product_link.text.strip()
+                        # Clean up the title (remove ratings, etc.)
+                        title = re.sub(r'Average customer rating.*', '', title).strip()
+                        title = re.sub(r'\d+ reviews.*', '', title).strip()
+                        # Keep only the first line which is usually the product name
+                        title = title.split('\n')[0].strip()
+                    
                     current_price = product.select_one(".ProductPrice-final").text.strip()
                     original_price_elem = product.select_one(".ProductPrice-original")
                     original_price = original_price_elem.text.strip() if original_price_elem else current_price
@@ -52,7 +67,7 @@ def scrape_footlocker(pages=1):
                         "date_found": datetime.now().strftime("%Y-%m-%d %H:%M")
                     })
                 except Exception as e:
-                    pass
+                    print(f"Product extraction error: {e}")
             
             time.sleep(random.uniform(1, 2))
         except Exception as e:

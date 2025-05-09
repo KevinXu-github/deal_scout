@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Deal Scout</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .deal-card { 
+            height: 100%; 
+        }
+        .discount-badge {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+        }
+        .card-title {
+            font-size: 1rem;
+            font-weight: bold;
+            height: 3rem;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+        }
+        .price-container {
+            margin: 1rem 0;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="#">Deal Scout</a>
+            <button class="btn btn-light" id="scrape-btn">Scrape Deals</button>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div class="row mb-3">
+            <div class="col">
+                <div class="input-group">
+                    <span class="input-group-text">Min Discount</span>
+                    <select class="form-select" id="discount-filter">
+                        <option value="0">All Deals</option>
+                        <option value="20">20% or more</option>
+                        <option value="30">30% or more</option>
+                        <option value="50">50% or more</option>
+                    </select>
+                    <button class="btn btn-primary" id="filter-btn">Filter</button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="row">
+            <div class="col-12 mb-4">
+                <div class="alert alert-info" id="status-alert">
+                    <span id="status-text">
+                        {% if last_scrape %}
+                            Last scraped: {{ last_scrape.strftime('%Y-%m-%d %H:%M') }}
+                        {% else %}
+                            No data available. Click "Scrape Deals" to find deals.
+                        {% endif %}
+                    </span>
+                    <div class="spinner-border spinner-border-sm text-primary float-end" id="loading-spinner" style="display: none;"></div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="row row-cols-1 row-cols-md-3 g-4" id="deals-container"></div>
+    </div>
+
+    <script>
+        // Elements
+        const dealsContainer = document.getElementById('deals-container');
+        const scrapeBtn = document.getElementById('scrape-btn');
+        const filterBtn = document.getElementById('filter-btn');
+        const discountFilter = document.getElementById('discount-filter');
+        const statusText = document.getElementById('status-text');
+        const loadingSpinner = document.getElementById('loading-spinner');
+        
+        // Load initial deals
+        loadDeals();
+        
+        // Check status every 5 seconds
+        setInterval(checkStatus, 5000);
+        
+        // Event listeners
+        scrapeBtn.addEventListener('click', startScraping);
+        filterBtn.addEventListener('click', applyFilters);
+        
+        function loadDeals() {
+            const minDiscount = discountFilter.value;
+            fetch(`/api/deals?min_discount=${minDiscount}`)
+                .then(response => response.json())
+                .then(deals => {
+                    dealsContainer.innerHTML = '';
+                    
+                    if (deals.length === 0) {
+                        dealsContainer.innerHTML = '<div class="col-12 text-center"><h3>No deals found</h3></div>';
+                        return;
+                    }
+                    
+                    // Sort by discount (highest first)
+                    deals.sort((a, b) => b.discount_pct - a.discount_pct);
+                    
+                    deals.forEach(deal => {
+                        const discountClass = deal.discount_pct >= 50 ? 'bg-danger' : 
+                                             deal.discount_pct >= 30 ? 'bg-warning' : 'bg-info';
+                        
+                        // Clean up the title - extract just the product name
+                        let cleanTitle = deal.title;
+                        
+                        // Remove any review info
+                        cleanTitle = cleanTitle.replace(/Average customer rating.*$/i, "");
+                        cleanTitle = cleanTitle.replace(/\d+ reviews.*$/i, "");
+                        cleanTitle = cleanTitle.replace(/\[\d+ out of \d+ stars\].*$/i, "");
+                        
+                        // Remove gender/color info if it appears after "Men's" or "Women's"
+                        cleanTitle = cleanTitle.replace(/(Men's|Women's).*$/i, "$1");
+                        
+                        // Remove any "On Sale" text
+                        cleanTitle = cleanTitle.replace(/This item is on sale.*$/i, "");
+                        
+                        // Remove any price information
+                        cleanTitle = cleanTitle.replace(/\$\d+\.\d+.*$/i, "");
+                        
+                        // Trim any whitespace
+                        cleanTitle = cleanTitle.trim();
+                        
+                        dealsContainer.innerHTML += `
+                            <div class="col">
+                                <div class="card deal-card">
+                                    <div class="badge ${discountClass} discount-badge">${deal.discount_pct}% OFF</div>
+                                    <div class="card-body">
+                                        <h5 class="card-title">${cleanTitle}</h5>
+                                        <div class="price-container">
+                                            <del class="text-muted">${deal.original_price}</del><br>
+                                            <strong class="text-success">${deal.current_price}</strong>
+                                        </div>
+                                        <a href="${deal.url}" target="_blank" class="btn btn-primary btn-sm">View Deal</a>
+                                    </div>
+                                    <div class="card-footer text-muted small">
+                                        ${deal.store} | ${new Date(deal.date_found).toLocaleDateString()}
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                });
+        }
+        
+        function startScraping() {
+            loadingSpinner.style.display = 'inline-block';
+            statusText.textContent = 'Scraping in progress...';
+            
+            fetch('/api/scrape', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'already_running') {
+                        alert('A scraping job is already running');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    loadingSpinner.style.display = 'none';
+                    statusText.textContent = 'Error starting scrape job';
+                });
+        }
+        
+        function checkStatus() {
+            fetch('/api/status')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.is_scraping) {
+                        loadingSpinner.style.display = 'inline-block';
+                        statusText.textContent = 'Scraping in progress...';
+                    } else {
+                        loadingSpinner.style.display = 'none';
+                        if (data.last_scrape) {
+                            statusText.textContent = `Last scraped: ${data.last_scrape}`;
+                            loadDeals();
+                        }
+                    }
+                });
+        }
+        
+        function applyFilters() {
+            loadDeals();
+        }
+    </script>
+</body>
+</html>
