@@ -6,11 +6,13 @@
     <style>
         .deal-card { 
             height: 100%; 
+            position: relative;
         }
         .discount-badge {
             position: absolute;
             top: 10px;
             right: 10px;
+            z-index: 10;
         }
         .card-title {
             font-size: 1rem;
@@ -21,9 +23,18 @@
             display: -webkit-box;
             -webkit-line-clamp: 2;
             -webkit-box-orient: vertical;
+            margin-top: 0.5rem;
         }
         .price-container {
             margin: 1rem 0;
+        }
+        .store-badge {
+            display: inline-block;
+            margin-bottom: 0.5rem;
+            font-size: 0.75rem;
+        }
+        .card-body {
+            padding-top: 0.75rem;
         }
     </style>
 </head>
@@ -40,7 +51,7 @@
 
     <div class="container mt-4">
         <div class="row mb-3">
-            <div class="col">
+            <div class="col-md-4">
                 <div class="input-group">
                     <span class="input-group-text">Min Discount</span>
                     <select class="form-select" id="discount-filter">
@@ -49,8 +60,18 @@
                         <option value="30">30% or more</option>
                         <option value="50">50% or more</option>
                     </select>
-                    <button class="btn btn-primary" id="filter-btn">Filter</button>
                 </div>
+            </div>
+            <div class="col-md-4">
+                <div class="input-group">
+                    <span class="input-group-text">Store</span>
+                    <select class="form-select" id="store-filter">
+                        <option value="">All Stores</option>
+                    </select>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <button class="btn btn-primary w-100" id="filter-btn">Apply Filters</button>
             </div>
         </div>
         
@@ -65,6 +86,10 @@
                         {% endif %}
                     </span>
                     <div class="spinner-border spinner-border-sm text-primary float-end" id="loading-spinner" style="display: none;"></div>
+                    <div class="progress mt-2" id="scrape-progress" style="display: none;">
+                        <div class="progress-bar" role="progressbar" style="width: 0%;" id="progress-bar">0%</div>
+                    </div>
+                    <small id="current-store" class="text-muted"></small>
                 </div>
             </div>
         </div>
@@ -78,11 +103,13 @@
         const scrapeBtn = document.getElementById('scrape-btn');
         const filterBtn = document.getElementById('filter-btn');
         const discountFilter = document.getElementById('discount-filter');
+        const storeFilter = document.getElementById('store-filter');
         const statusText = document.getElementById('status-text');
         const loadingSpinner = document.getElementById('loading-spinner');
         
-        // Load initial deals
+        // Load initial data
         loadDeals();
+        loadStores();
         
         // Check status every 5 seconds
         setInterval(checkStatus, 5000);
@@ -91,9 +118,27 @@
         scrapeBtn.addEventListener('click', startScraping);
         filterBtn.addEventListener('click', applyFilters);
         
+        function loadStores() {
+            fetch('/api/stores')
+                .then(response => response.json())
+                .then(stores => {
+                    storeFilter.innerHTML = '<option value="">All Stores</option>';
+                    stores.sort().forEach(store => {
+                        storeFilter.innerHTML += `<option value="${store}">${store}</option>`;
+                    });
+                });
+        }
+        
         function loadDeals() {
             const minDiscount = discountFilter.value;
-            fetch(`/api/deals?min_discount=${minDiscount}`)
+            const store = storeFilter.value;
+            
+            let url = `/api/deals?min_discount=${minDiscount}`;
+            if (store) {
+                url += `&store=${encodeURIComponent(store)}`;
+            }
+            
+            fetch(url)
                 .then(response => response.json())
                 .then(deals => {
                     dealsContainer.innerHTML = '';
@@ -110,31 +155,15 @@
                         const discountClass = deal.discount_pct >= 50 ? 'bg-danger' : 
                                              deal.discount_pct >= 30 ? 'bg-warning' : 'bg-info';
                         
-                        // Clean up the title - extract just the product name
+                        // Clean up the title
                         let cleanTitle = deal.title;
-                        
-                        // Remove any review info
-                        cleanTitle = cleanTitle.replace(/Average customer rating.*$/i, "");
-                        cleanTitle = cleanTitle.replace(/\d+ reviews.*$/i, "");
-                        cleanTitle = cleanTitle.replace(/\[\d+ out of \d+ stars\].*$/i, "");
-                        
-                        // Remove gender/color info if it appears after "Men's" or "Women's"
-                        cleanTitle = cleanTitle.replace(/(Men's|Women's).*$/i, "$1");
-                        
-                        // Remove any "On Sale" text
-                        cleanTitle = cleanTitle.replace(/This item is on sale.*$/i, "");
-                        
-                        // Remove any price information
-                        cleanTitle = cleanTitle.replace(/\$\d+\.\d+.*$/i, "");
-                        
-                        // Trim any whitespace
-                        cleanTitle = cleanTitle.trim();
                         
                         dealsContainer.innerHTML += `
                             <div class="col">
                                 <div class="card deal-card">
                                     <div class="badge ${discountClass} discount-badge">${deal.discount_pct}% OFF</div>
                                     <div class="card-body">
+                                        <div class="badge bg-secondary store-badge">${deal.store}</div>
                                         <h5 class="card-title">${cleanTitle}</h5>
                                         <div class="price-container">
                                             <del class="text-muted">${deal.original_price}</del><br>
@@ -143,7 +172,7 @@
                                         <a href="${deal.url}" target="_blank" class="btn btn-primary btn-sm">View Deal</a>
                                     </div>
                                     <div class="card-footer text-muted small">
-                                        ${deal.store} | ${new Date(deal.date_found).toLocaleDateString()}
+                                        ${new Date(deal.date_found).toLocaleDateString()}
                                     </div>
                                 </div>
                             </div>
@@ -154,7 +183,7 @@
         
         function startScraping() {
             loadingSpinner.style.display = 'inline-block';
-            statusText.textContent = 'Scraping in progress...';
+            statusText.textContent = 'Starting scraping job...';
             
             fetch('/api/scrape', { method: 'POST' })
                 .then(response => response.json())
@@ -176,12 +205,35 @@
                 .then(data => {
                     if (data.is_scraping) {
                         loadingSpinner.style.display = 'inline-block';
-                        statusText.textContent = 'Scraping in progress...';
+                        
+                        // Show progress
+                        const progressDiv = document.getElementById('scrape-progress');
+                        const progressBar = document.getElementById('progress-bar');
+                        const currentStore = document.getElementById('current-store');
+                        
+                        if (data.scrape_progress) {
+                            progressDiv.style.display = 'block';
+                            const percentage = (data.scrape_progress.current / data.scrape_progress.total) * 100;
+                            progressBar.style.width = percentage + '%';
+                            progressBar.textContent = Math.round(percentage) + '%';
+                            
+                            if (data.scrape_progress.current_store) {
+                                currentStore.textContent = `Currently scraping: ${data.scrape_progress.current_store}`;
+                            }
+                            
+                            statusText.textContent = `Scraping in progress... (${data.scrape_progress.current}/${data.scrape_progress.total} stores)`;
+                        } else {
+                            statusText.textContent = 'Scraping in progress...';
+                        }
                     } else {
                         loadingSpinner.style.display = 'none';
+                        document.getElementById('scrape-progress').style.display = 'none';
+                        document.getElementById('current-store').textContent = '';
+                        
                         if (data.last_scrape) {
-                            statusText.textContent = `Last scraped: ${data.last_scrape}`;
+                            statusText.textContent = `Last scraped: ${data.last_scrape} - Found ${data.deals_count} deals`;
                             loadDeals();
+                            loadStores();
                         }
                     }
                 });
