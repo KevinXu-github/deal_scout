@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Trending TikTok Deals</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .trending-badge {
+            background: #ff0050;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 20px;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="/">Deal Scout</a>
+            <a href="/trending" class="btn btn-danger">🔥 Trending</a>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <h2>🔥 TikTok Trending Deals</h2>
+        
+        <button class="btn btn-primary mb-3" onclick="checkTrends()">Check TikTok Trends</button>
+        
+        <div class="row">
+            {% for deal in trending_deals %}
+            <div class="col-md-4 mb-3">
+                <div class="card">
+                    <div class="card-body">
+                        <span class="trending-badge">
+                            {{ deal.trending_data.tiktok_views // 1000000 }}M views
+                        </span>
+                        <h5>{{ deal.title }}</h5>
+                        <p>{{ deal.store }} - {{ deal.discount_pct }}% off</p>
+                        <p>Price: {{ deal.current_price }}</p>
+                        <a href="{{ deal.url }}" class="btn btn-success">View Deal</a>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <script>
+        function checkTrends() {
+            fetch('/api/check-trends', { method: 'POST' })
+                .then(() => {
+                    alert('Checking TikTok trends...');
+                    setTimeout(() => location.reload(), 5000);
+                });
+        }
+    </script>
+</body>
+</html>

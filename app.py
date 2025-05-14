@@ -7,6 +7,9 @@ import os
 import re
 from datetime import datetime
 import importlib
+import tiktok_trend_tracker
+
+
 
 # Force reload of deal_scraper module to ensure latest changes
 importlib.reload(deal_scraper)
@@ -125,6 +128,58 @@ def background_amazon_checker():
     finally:
         is_checking_amazon = False
         print("Amazon price check completed")
+
+
+
+# Add these global variables
+trending_data = []
+is_checking_trends = False
+
+# Add this function
+def background_trend_checker():
+    """Check trending products and match with deals"""
+    global trending_data, is_checking_trends
+    is_checking_trends = True
+    
+    try:
+        # Get trending products from TikTok
+        tracker = tiktok_trend_tracker.TikTokTrendTracker()
+        trending_products = tracker.get_trending_products()
+        
+        # Match with your current deals
+        trending_deals = []
+        for product in trending_products:
+            matches = tiktok_trend_tracker.find_matching_deals(product, deals_data)
+            trending_deals.extend(matches)
+        
+        trending_data = trending_deals
+        print(f"Found {len(trending_deals)} trending deals")
+        
+    except Exception as e:
+        print(f"Error checking trends: {e}")
+    finally:
+        is_checking_trends = False
+
+# Add these routes
+@app.route('/trending')
+def trending_page():
+    """Page showing trending deals"""
+    return render_template('trending.html', trending_deals=trending_data)
+
+@app.route('/api/check-trends', methods=['POST'])
+def check_trends():
+    """Start checking for trending products"""
+    global is_checking_trends
+    
+    if is_checking_trends:
+        return jsonify({'status': 'already_running'})
+    
+    thread = threading.Thread(target=background_trend_checker)
+    thread.daemon = True
+    thread.start()
+    
+    return jsonify({'status': 'started'})
+
 
 @app.route('/')
 def index():
